@@ -1,0 +1,49 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+
+./client/node_modules/
+
+# Dependencies
+node_modules/
+
+# Build output
+./client/dist/
+.client/build/
+
+# Vite
+./client/.vite/
+
+# Environment (keep .env.example, ignore secrets)
+./client/.env
+./client/.env.local
+./client/.env.development.local
+./client/.env.test.local
+./client/.env.production.local
+
+# Logs
+./client/npm-debug.log*
+./client/yarn-debug.log*
+./client/yarn-error.log*
+./client/pnpm-debug.log*
+
+# OS
+.DS_Store
+./client/Thumbs.db
+
+# TypeScript
+./client/*.tsbuildinfo
