@@ -1,0 +1,214 @@
+### ─────────────────────────────────────────────────────────────────────────
+### SERVER ENDPOINTS
+### Requires: {{authToken}} and {{authToken2}} from 01_auth.http
+### ─────────────────────────────────────────────────────────────────────────
+
+### [1] Create server "Rust Developers"
+POST {{baseUrl}}/servers
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "name": "Rust Developers"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.test("Server name matches", function() {
+    client.assert(response.body.name === "Rust Developers", "name mismatch");
+  });
+  client.test("Auto-creates #general channel", function() {
+    client.assert(response.body.channels.length >= 1, "no channels created");
+    client.assert(response.body.channels[0].name === "general", "first channel not general");
+  });
+  client.test("Creator is OWNER member", function() {
+    const owner = response.body.members.find(m => m.role === "OWNER");
+    client.assert(owner !== undefined, "no OWNER member");
+  });
+  client.global.set("serverId", response.body.id);
+  client.global.set("channelId", response.body.channels[0].id);
+  client.global.set("inviteCode", response.body.inviteCode);
+%}
+
+
+### [2] Create second server for multi-server tests
+POST {{baseUrl}}/servers
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "name": "TypeScript Guild"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.global.set("serverId2", response.body.id);
+%}
+
+
+### [3] List all servers for Alice (should include both)
+GET {{baseUrl}}/servers
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("At least 2 servers returned", function() {
+    client.assert(response.body.length >= 2, "expected 2+ servers, got " + response.body.length);
+  });
+%}
+
+
+### [4] Get server detail by ID
+GET {{baseUrl}}/servers/{{serverId}}
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Channels array present", function() {
+    client.assert(Array.isArray(response.body.channels), "channels not an array");
+  });
+  client.test("Members array present", function() {
+    client.assert(Array.isArray(response.body.members), "members not an array");
+  });
+  client.test("Owner object present", function() {
+    client.assert(response.body.owner.username === "alice", "owner mismatch");
+  });
+%}
+
+
+### [5] Get server detail as non-member → 403
+GET {{baseUrl}}/servers/{{serverId}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 403 Forbidden", function() {
+    client.assert(response.status === 403, "Expected 403, got " + response.status);
+  });
+%}
+
+
+### [6] Update server name (owner only)
+PUT {{baseUrl}}/servers/{{serverId}}
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "name": "Rust & Systems Programming"
+}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Name updated", function() {
+    client.assert(response.body.name === "Rust & Systems Programming", "name not updated");
+  });
+%}
+
+
+### [7] Update server name as non-owner (Bob) → 403
+PUT {{baseUrl}}/servers/{{serverId}}
+Content-Type: application/json
+Authorization: Bearer {{authToken2}}
+
+{
+  "name": "Hacked Name"
+}
+
+> {%
+  client.test("Status 403 Forbidden", function() {
+    client.assert(response.status === 403, "Expected 403, got " + response.status);
+  });
+%}
+
+
+### [8] Bob joins Alice's server via invite code
+POST {{baseUrl}}/servers/join/{{inviteCode}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Bob is now a member", function() {
+    const bob = response.body.members.find(m => m.role === "MEMBER");
+    client.assert(bob !== undefined, "Bob not found as MEMBER");
+  });
+  client.test("Member count increased", function() {
+    client.assert(response.body.members.length >= 2, "expected 2+ members");
+  });
+%}
+
+
+### [9] Bob tries to join the same server again → 409
+POST {{baseUrl}}/servers/join/{{inviteCode}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 409 Conflict", function() {
+    client.assert(response.status === 409, "Expected 409, got " + response.status);
+  });
+%}
+
+
+### [10] Join with invalid invite code → 404
+POST {{baseUrl}}/servers/join/INVALID1
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 404 Not Found", function() {
+    client.assert(response.status === 404, "Expected 404, got " + response.status);
+  });
+%}
+
+
+### [11] Bob leaves the server
+DELETE {{baseUrl}}/servers/{{serverId}}/leave
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 204 No Content", function() {
+    client.assert(response.status === 204, "Expected 204, got " + response.status);
+  });
+%}
+
+
+### [12] Owner (Alice) tries to leave own server → 403
+DELETE {{baseUrl}}/servers/{{serverId}}/leave
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 403 Forbidden", function() {
+    client.assert(response.status === 403, "Expected 403, got " + response.status);
+  });
+%}
+
+
+### [13] Delete the second server (owner only)
+DELETE {{baseUrl}}/servers/{{serverId2}}
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 204 No Content", function() {
+    client.assert(response.status === 204, "Expected 204, got " + response.status);
+  });
+%}
+
+
+### [14] Get deleted server → 404
+GET {{baseUrl}}/servers/{{serverId2}}
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 404 Not Found", function() {
+    client.assert(response.status === 404, "Expected 404, got " + response.status);
+  });
+%}

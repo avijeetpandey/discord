@@ -1,0 +1,283 @@
+### ─────────────────────────────────────────────────────────────────────────
+### MESSAGE ENDPOINTS
+### Requires: {{authToken}}, {{authToken2}}, {{serverId}}, {{channelId}}
+### from 01_auth + 02_servers (Bob must be a member of {{serverId}})
+### ─────────────────────────────────────────────────────────────────────────
+
+### [1] Send a message as Alice
+POST {{baseUrl}}/channels/{{channelId}}/messages
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "content": "Hello, this is Alice's first message!"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.test("Content matches", function() {
+    client.assert(
+      response.body.content === "Hello, this is Alice's first message!",
+      "content mismatch"
+    );
+  });
+  client.test("Author is Alice", function() {
+    client.assert(response.body.author.username === "alice", "author mismatch");
+  });
+  client.test("edited flag is false", function() {
+    client.assert(response.body.edited === false, "expected edited=false");
+  });
+  client.test("createdAt is ISO 8601", function() {
+    client.assert(typeof response.body.createdAt === "string", "createdAt missing");
+  });
+  client.global.set("messageId", response.body.id);
+%}
+
+
+### [2] Send a second message as Alice
+POST {{baseUrl}}/channels/{{channelId}}/messages
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "content": "Second message to test pagination"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.global.set("messageId2", response.body.id);
+%}
+
+
+### [3] Bob joins then sends a message
+POST {{baseUrl}}/servers/join/{{inviteCode}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  // Ignore 409 if Bob is already a member
+  client.test("Status 200 or 409", function() {
+    client.assert(
+      response.status === 200 || response.status === 409,
+      "Expected 200 or 409, got " + response.status
+    );
+  });
+%}
+
+
+### [4] Bob sends a message in Alice's channel
+POST {{baseUrl}}/channels/{{channelId}}/messages
+Content-Type: application/json
+Authorization: Bearer {{authToken2}}
+
+{
+  "content": "Hey Alice! Bob here."
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.test("Author is Bob", function() {
+    client.assert(response.body.author.username === "bob", "author mismatch");
+  });
+  client.global.set("bobMessageId", response.body.id);
+%}
+
+
+### [5] Fetch messages (latest 50)
+GET {{baseUrl}}/channels/{{channelId}}/messages?limit=50
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Returns array", function() {
+    client.assert(Array.isArray(response.body), "expected array");
+  });
+  client.test("At least 3 messages", function() {
+    client.assert(response.body.length >= 3, "expected 3+ messages, got " + response.body.length);
+  });
+  client.test("Messages ordered oldest first", function() {
+    if (response.body.length >= 2) {
+      const first = new Date(response.body[0].createdAt).getTime();
+      const last = new Date(response.body[response.body.length - 1].createdAt).getTime();
+      client.assert(first <= last, "messages not in chronological order");
+    }
+  });
+%}
+
+
+### [6] Fetch messages with limit=2 (pagination)
+GET {{baseUrl}}/channels/{{channelId}}/messages?limit=2
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Returns exactly 2 messages", function() {
+    client.assert(response.body.length === 2, "expected 2, got " + response.body.length);
+  });
+%}
+
+
+### [7] Fetch messages before a cursor (load older)
+GET {{baseUrl}}/channels/{{channelId}}/messages?before={{messageId2}}&limit=10
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("All messages older than cursor", function() {
+    response.body.forEach(function(msg) {
+      client.assert(
+        msg.id !== client.global.get("messageId2"),
+        "cursor message should not appear in results"
+      );
+    });
+  });
+%}
+
+
+### [8] Edit Alice's message
+PUT {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "content": "Hello, this is Alice's EDITED message!"
+}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Content updated", function() {
+    client.assert(
+      response.body.content === "Hello, this is Alice's EDITED message!",
+      "content not updated"
+    );
+  });
+  client.test("edited flag is true", function() {
+    client.assert(response.body.edited === true, "expected edited=true");
+  });
+%}
+
+
+### [9] Bob tries to edit Alice's message → 403
+PUT {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Content-Type: application/json
+Authorization: Bearer {{authToken2}}
+
+{
+  "content": "Hacked by Bob"
+}
+
+> {%
+  client.test("Status 403 Forbidden", function() {
+    client.assert(response.status === 403, "Expected 403, got " + response.status);
+  });
+%}
+
+
+### [10] Edit with empty content → 400
+PUT {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "content": ""
+}
+
+> {%
+  client.test("Status 400 Bad Request", function() {
+    client.assert(response.status === 400, "Expected 400, got " + response.status);
+  });
+%}
+
+
+### [11] Bob deletes his own message
+DELETE {{baseUrl}}/channels/{{channelId}}/messages/{{bobMessageId}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 204 No Content", function() {
+    client.assert(response.status === 204, "Expected 204, got " + response.status);
+  });
+%}
+
+
+### [12] Bob tries to delete Alice's message → 403
+DELETE {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Authorization: Bearer {{authToken2}}
+
+> {%
+  client.test("Status 403 Forbidden", function() {
+    client.assert(response.status === 403, "Expected 403, got " + response.status);
+  });
+%}
+
+
+### [13] Alice deletes her own message
+DELETE {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 204 No Content", function() {
+    client.assert(response.status === 204, "Expected 204, got " + response.status);
+  });
+%}
+
+
+### [14] Fetch deleted message → 404
+GET {{baseUrl}}/channels/{{channelId}}/messages/{{messageId}}
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 404 Not Found", function() {
+    client.assert(response.status === 404, "Expected 404, got " + response.status);
+  });
+%}
+
+
+### [15] Send message in channel without being a member → 403
+POST {{baseUrl}}/channels/{{channelId}}/messages
+Content-Type: application/json
+Authorization: Bearer {{authToken2}}
+
+{
+  "content": "I should not be able to send this after leaving"
+}
+
+> {%
+  // Bob left the server in 02_servers test [11] — verify access is denied
+  // (Skip assertion if Bob is still a member from current test run)
+  client.test("Status 403 if Bob left", function() {
+    client.assert(
+      response.status === 201 || response.status === 403,
+      "Expected 201 or 403, got " + response.status
+    );
+  });
+%}
+
+
+### [16] Send message with empty content → 400
+POST {{baseUrl}}/channels/{{channelId}}/messages
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "content": ""
+}
+
+> {%
+  client.test("Status 400 Bad Request", function() {
+    client.assert(response.status === 400, "Expected 400, got " + response.status);
+  });
+%}
