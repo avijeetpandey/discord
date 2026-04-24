@@ -1,0 +1,180 @@
+### ─────────────────────────────────────────────────────────────────────────
+### AUTH ENDPOINTS
+### Run these first — they populate {{authToken}} used by all other files.
+### ─────────────────────────────────────────────────────────────────────────
+
+### [1] Register user Alice (primary test user)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.test("Response has token", function() {
+    client.assert(response.body.token !== undefined, "token missing");
+  });
+  client.test("Response has user object", function() {
+    client.assert(response.body.user.username === "alice", "username mismatch");
+  });
+  client.global.set("authToken", response.body.token);
+  client.global.set("userId", response.body.user.id);
+%}
+
+
+### [2] Register user Bob (secondary user for join/presence tests)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "bob",
+  "email": "bob@example.com",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 201 Created", function() {
+    client.assert(response.status === 201, "Expected 201, got " + response.status);
+  });
+  client.global.set("authToken2", response.body.token);
+  client.global.set("userId2", response.body.user.id);
+%}
+
+
+### [3] Login as Alice
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "alice@example.com",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Response has JWT token", function() {
+    client.assert(response.body.token.length > 0, "token is empty");
+  });
+  client.global.set("authToken", response.body.token);
+%}
+
+
+### [4] Login with wrong password → 401
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "alice@example.com",
+  "password": "wrongpassword"
+}
+
+> {%
+  client.test("Status 401 Unauthorized", function() {
+    client.assert(response.status === 401, "Expected 401, got " + response.status);
+  });
+  client.test("Error message present", function() {
+    client.assert(response.body.error !== undefined, "error message missing");
+  });
+%}
+
+
+### [5] Login with non-existent email → 401
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nobody@example.com",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 401 Unauthorized", function() {
+    client.assert(response.status === 401, "Expected 401, got " + response.status);
+  });
+%}
+
+
+### [6] Register with invalid email (validation) → 400
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "baduser",
+  "email": "not-an-email",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 400 Bad Request", function() {
+    client.assert(response.status === 400, "Expected 400, got " + response.status);
+  });
+  client.test("fields object present", function() {
+    client.assert(response.body.fields !== undefined, "fields missing");
+  });
+%}
+
+
+### [7] Register with too-short password → 400
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "email": "new@example.com",
+  "password": "short"
+}
+
+> {%
+  client.test("Status 400 Bad Request", function() {
+    client.assert(response.status === 400, "Expected 400, got " + response.status);
+  });
+%}
+
+
+### [8] Register duplicate email → 409
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "alice2",
+  "email": "alice@example.com",
+  "password": "Password123!"
+}
+
+> {%
+  client.test("Status 409 Conflict", function() {
+    client.assert(response.status === 409, "Expected 409, got " + response.status);
+  });
+%}
+
+
+### [9] Get current authenticated user
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{authToken}}
+
+> {%
+  client.test("Status 200 OK", function() {
+    client.assert(response.status === 200, "Expected 200, got " + response.status);
+  });
+  client.test("Username matches", function() {
+    client.assert(response.body.username === "alice", "username mismatch");
+  });
+%}
+
+
+### [10] Get /me without token → 401
+GET {{baseUrl}}/auth/me
+
+> {%
+  client.test("Status 401 Unauthorized", function() {
+    client.assert(response.status === 401, "Expected 401, got " + response.status);
+  });
+%}
