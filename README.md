@@ -901,3 +901,7 @@ Data is persisted in named volumes (`postgres_data`, `redis_data`). To delete da
 ```bash
 docker compose down -v   # -v removes volumes
 ```
+
+#### Todo
+[] Add monitoring and alerting setup
+[] Add Kubernetes support
