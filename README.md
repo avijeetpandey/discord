@@ -903,5 +903,5 @@ docker compose down -v   # -v removes volumes
 ```
 
 #### Todo
-[] Add monitoring and alerting setup
-[] Add Kubernetes support
+- [ ] Add monitoring and alerting setup
+- [ ] Add Kubernetes support
